@@ -20,23 +20,24 @@ def main():
     
     #read_molecule(), parmed either loads both the parm7 and rst7 or just the pdb file per line
     #parm = pmd.load_file("/home/tyork/ribosome/radial_distr/radial_distr/tests/ala.parm7","/home/tyork/ribosome/radial_distr/radial_distr/tests/ala.rst7",)
-    parm = pmd.load_file(args.p,args.y)
+    parm = pmd.load_file(args.parm,args.coords)
     # print("test print", parm.coordinates)
     print(parm.coordinates.shape)
     rdf,dr = compute_rad_dist(parm.coordinates, g.grid, g.midpoints, args.cutoff, args.nprocess)
     df = pd.DataFrame({'sep':np.linspace(dr / 2,len(rdf) * dr - dr / 2, len(rdf)), 'rdf':rdf})
     df = df.fillna(0)
     # df = compute_rad_dist_python(parm.coordinates, g)
-    print(df)
-    df.to_csv('rdf.csv', index=False)
+    # print(df)
+    df.to_csv(args.rdf, index=False)
 
 def get_args():
     parser = argparse.ArgumentParser(prog='radial_distr.py',description='This program creates a radial distribution function around a biological molecule')
     parser.add_argument('--guv',help='guv file expected',required=True)
-    parser.add_argument('-p',help='parmtop file',required=True)
-    parser.add_argument('-y',help='coordinate file',required=True)
-    parser.add_argument('--cutoff', type=float, help = 'Maximum cutoff in Angstroms. This will be automatically reduced if greater than any of the grid dimensions.')
-    parser.add_argument('--nprocess', type=int, help = 'Number of parallel processes.')
+    parser.add_argument('-p', '--parm',help='parmtop file',required=True)
+    parser.add_argument('-y', '--coords', help='coordinate file',required=True)
+    parser.add_argument('--cutoff', type=float, default = 20., help = 'Maximum cutoff in Angstroms. This will be automatically reduced if greater than any of the grid dimensions.')
+    parser.add_argument('--nprocess', type=int, default = 1, help = 'Number of parallel processes.')
+    parser.add_argument('--rdf', required = True, help = 'Output rdf file')
     args = parser.parse_args()
     return args
 
