@@ -55,15 +55,16 @@ def compute_rad_dist(coordinates, grid, midpoints, max_cutoff=20, nworkers = 1):
 
     origin = np.array((midpoints[0][0], midpoints[1][0], midpoints[2][0]))
 
-    # make sure the bounding box is at least double the size of the grid
-    box = np.array([midpoints[0][-1]*2, midpoints[1][-1]*2, midpoints[2][-1]*2, 90, 90, 90])
     
     # shift the coordinates and grid points to have an origin at (0,0,0)
     shift = coordinates.copy()
     shift -= origin
     for i in range(len(origin)):
         midpoints[i] -= origin[i]
-    
+
+    # make sure the bounding box is at least double the size of the grid
+    box = np.array([midpoints[0][-1]*2, midpoints[1][-1]*2, midpoints[2][-1]*2, 90, 90, 90])
+
     # ensure that the maximum distance fits within the box.  This is require FastNS
     dr = 0.1
     nbins = int(min(max_cutoff / dr, min(box[:3]) / 2 / dr))
