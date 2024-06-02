@@ -6,6 +6,7 @@ import pandas as pd
 import gridData
 import numba
 import MDAnalysis
+import multiprocessing
 
 def main():
     args = get_args()    
@@ -20,9 +21,9 @@ def main():
     #read_molecule(), parmed either loads both the parm7 and rst7 or just the pdb file per line
     #parm = pmd.load_file("/home/tyork/ribosome/radial_distr/radial_distr/tests/ala.parm7","/home/tyork/ribosome/radial_distr/radial_distr/tests/ala.rst7",)
     parm = pmd.load_file(args.p,args.y)
-    print("test print", parm.coordinates)
+    # print("test print", parm.coordinates)
     print(parm.coordinates.shape)
-    rdf,dr = compute_rad_dist(parm.coordinates, g.grid, g.midpoints, args.cutoff, 2)
+    rdf,dr = compute_rad_dist(parm.coordinates, g.grid, g.midpoints, args.cutoff, args.nprocess)
     df = pd.DataFrame({'sep':np.linspace(dr / 2,len(rdf) * dr - dr / 2, len(rdf)), 'rdf':rdf})
     df = df.fillna(0)
     # df = compute_rad_dist_python(parm.coordinates, g)
@@ -35,6 +36,7 @@ def get_args():
     parser.add_argument('-p',help='parmtop file',required=True)
     parser.add_argument('-y',help='coordinate file',required=True)
     parser.add_argument('--cutoff', type=float, help = 'Maximum cutoff in Angstroms. This will be automatically reduced if greater than any of the grid dimensions.')
+    parser.add_argument('--nprocess', type=int, help = 'Number of parallel processes.')
     args = parser.parse_args()
     return args
 
@@ -46,9 +48,9 @@ def compute_rad_dist(coordinates, grid, midpoints, max_cutoff=20, nworkers = 1):
 
     for i in range(remainder):
         tasks_per_worker[i] += 1
-    print(grid.shape[0])
+    # print(grid.shape[0])
     bounds = np.array([0] + tasks_per_worker).cumsum()
-    print(bounds)
+    # print(bounds)
 
     origin = np.array((midpoints[0][0], midpoints[1][0], midpoints[2][0]))
 
@@ -65,7 +67,7 @@ def compute_rad_dist(coordinates, grid, midpoints, max_cutoff=20, nworkers = 1):
     dr = 0.1
     nbins = int(min(max_cutoff / dr, min(box[:3]) / 2 / dr))
 
-    print(nbins, max_cutoff, max_cutoff / dr, min(box[:3]) / 2 , min(box[:3]) / 2 / dr)
+    # print(nbins, max_cutoff, max_cutoff / dr, min(box[:3]) / 2 , min(box[:3]) / 2 / dr)
 
     #create arrays for hist and rdf
     hist = np.zeros((nbins), dtype=np.int64)
@@ -74,14 +76,29 @@ def compute_rad_dist(coordinates, grid, midpoints, max_cutoff=20, nworkers = 1):
     hist_all = np.zeros((nworkers,nbins), dtype=np.int64)
     rdf_all = np.zeros((nworkers, nbins))
 
-    for iworker, istart, istop in zip(range(nworkers), bounds[:-1], bounds[1:]):
-        rdf_all[iworker,:], hist_all[iworker,:] = compute_rad_dist_numba(shift, grid, midpoints, dr, nbins, box, istart, istop)
-    
-    print(hist_all)
-    print(rdf_all)
+    # for iworker, istart, istop in zip(range(nworkers), bounds[:-1], bounds[1:]):
+    #     rdf_all[iworker,:], hist_all[iworker,:] = compute_rad_dist_numba(shift, grid, midpoints, dr, nbins, box, istart, istop)
+
+    with multiprocessing.Pool() as p:
+        results = p.map(
+            worker, 
+            [(shift, grid, midpoints, dr, nbins, box, iworker, istart, istop)
+             for iworker, istart, istop in zip(range(nworkers), bounds[:-1], bounds[1:])])
+
+    for i, (rdf, hist) in enumerate(results):
+        rdf_all[i,:] = rdf
+        hist_all[i,:] = hist
+
+    # print(hist_all)
+    # print(rdf_all)
     hist = hist_all.sum(axis=0)
     rdf = rdf_all.sum(axis=0)/hist
     return rdf, dr
+
+def worker(args):
+    shift, grid, midpoints, dr, nbins, box, iworker, istart, istop = args
+    return compute_rad_dist_numba(shift, grid, midpoints, dr, nbins, box, istart, istop)
+
 
 #@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 #@numba.jit(cache=True,forceobj=True, looplift=False, nogil=False,parallel=False,fastmath=True)
