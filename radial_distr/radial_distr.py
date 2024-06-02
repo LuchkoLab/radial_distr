@@ -22,7 +22,7 @@ def main():
     parm = pmd.load_file(args.p,args.y)
     print("test print", parm.coordinates)
     print(parm.coordinates.shape)
-    rdf,dr = compute_rad_dist_numba(parm.coordinates, g.grid, g.midpoints, args.cutoff)
+    rdf,dr = compute_rad_dist(parm.coordinates, g.grid, g.midpoints, args.cutoff, 2)
     df = pd.DataFrame({'sep':np.linspace(dr / 2,len(rdf) * dr - dr / 2, len(rdf)), 'rdf':rdf})
     df = df.fillna(0)
     # df = compute_rad_dist_python(parm.coordinates, g)
@@ -38,12 +38,18 @@ def get_args():
     args = parser.parse_args()
     return args
 
+def compute_rad_dist(coordinates, grid, midpoints, max_cutoff=20, nworkers = 1):
+    base_tasks = grid.shape[0] // nworkers
+    remainder = grid.shape[0] % nworkers
 
+    tasks_per_worker = [base_tasks for _ in range(nworkers)]
 
-#@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
-#@numba.jit(cache=True,forceobj=True, looplift=False, nogil=False,parallel=False,fastmath=True)
-def compute_rad_dist_numba(coordinates, grid, midpoints, max_cutoff=20):
-    
+    for i in range(remainder):
+        tasks_per_worker[i] += 1
+    print(grid.shape[0])
+    bounds = np.array([0] + tasks_per_worker).cumsum()
+    print(bounds)
+
     origin = np.array((midpoints[0][0], midpoints[1][0], midpoints[2][0]))
 
     # make sure the bounding box is at least double the size of the grid
@@ -57,22 +63,44 @@ def compute_rad_dist_numba(coordinates, grid, midpoints, max_cutoff=20):
     
     # ensure that the maximum distance fits within the box.  This is require FastNS
     dr = 0.1
-    nbins = int(min(max_cutoff/dr, min(box[:3])) / 2 / dr)
+    nbins = int(min(max_cutoff / dr, min(box[:3]) / 2 / dr))
 
-    # create the cell list
-    cell_list = MDAnalysis.lib.nsgrid.FastNS(
-        dr * nbins, shift.astype('float32'), 
-        box,
-        pbc=False)
-    
+    print(nbins, max_cutoff, max_cutoff / dr, min(box[:3]) / 2 , min(box[:3]) / 2 / dr)
+
     #create arrays for hist and rdf
     hist = np.zeros((nbins), dtype=np.int64)
     rdf = np.zeros(nbins)
-    # print("test hist and rdf arrays:", hist, rdf)
+
+    hist_all = np.zeros((nworkers,nbins), dtype=np.int64)
+    rdf_all = np.zeros((nworkers, nbins))
+
+    for iworker, istart, istop in zip(range(nworkers), bounds[:-1], bounds[1:]):
+        rdf_all[iworker,:], hist_all[iworker,:] = compute_rad_dist_numba(shift, grid, midpoints, dr, nbins, box, istart, istop)
     
-    for ix in numba.prange(grid.shape[0]):
+    print(hist_all)
+    print(rdf_all)
+    hist = hist_all.sum(axis=0)
+    rdf = rdf_all.sum(axis=0)/hist
+    return rdf, dr
+
+#@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
+#@numba.jit(cache=True,forceobj=True, looplift=False, nogil=False,parallel=False,fastmath=True)
+def compute_rad_dist_numba(coordinates, grid, midpoints, dr, nbins, box, start, stop):
+    
+    hist = np.zeros((nbins), dtype=np.int64)
+    rdf = np.zeros(nbins)
+
+    # print("test hist and rdf arrays:", hist, rdf)
+    # create the cell list
+    cell_list = MDAnalysis.lib.nsgrid.FastNS(
+        dr * nbins, coordinates.astype('float32'), 
+        box,
+        pbc=False)
+    
+    
+    for ix in range(start, stop):
         for iy in range(grid.shape[1]):
-            print(ix, iy)
+            # print(ix, iy)
             for iz in range(grid.shape[2]):
                 
                 mdpnt = np.array([[midpoints[0][ix], midpoints[1][iy], midpoints[2][iz]]])
@@ -93,9 +121,9 @@ def compute_rad_dist_numba(coordinates, grid, midpoints, max_cutoff=20):
                 
             # if iy == 2: return
     #normalize
-    rdf = rdf / hist
+    # rdf = rdf / hist
     #df is data frame
-    return rdf,dr
+    return rdf, hist
     
 def compute_rad_dist_python(coordinates, grid):
     nbins = 200
