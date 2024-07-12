@@ -37,9 +37,9 @@ def main():
     df.to_csv(args.rdf, index=False)
 
     # Compute the radial distribution function without Numba optimization
-    rdf = compute_rad_dist(parm.coordinates, g)
-    print(rdf)
-    rdf.to_csv('rdf.csv', index=False)  # Save the DataFrame to a CSV file
+    #rdf = compute_rad_dist(parm.coordinates, g)
+    #print(rdf)
+    #rdf.to_csv('rdf.csv', index=False)  # Save the DataFrame to a CSV file
 
 def get_args():
     """
@@ -96,6 +96,7 @@ def compute_rad_dist(coordinates, grid, midpoints, max_cutoff=20, nworkers = 1):
         midpoints[i] -= origin[i]
     
     # ensure that the maximum distance fits within the box.  This is require FastNS
+    dr = 0.1
     nbins = int(min(max_cutoff / dr, min(box[:3]) / 2 / dr))
 
     # print(nbins, max_cutoff, max_cutoff / dr, min(box[:3]) / 2 , min(box[:3]) / 2 / dr)
@@ -171,7 +172,7 @@ def compute_rad_dist_numba(coordinates, grid, midpoints, dr, nbins, box, start, 
     return rdf, hist
 
 def compute_rad_dist_python(coordinates, grid):
-    return rdf, dr  # Return the RDF and bin width
+    
 
     """
     Compute the radial distribution function without using Numba for optimization.
@@ -183,7 +184,7 @@ def compute_rad_dist_python(coordinates, grid):
     Returns:
     pandas.DataFrame: DataFrame containing the radial distribution function.
     """
-    nbins = 200  # Number of bins for the RDF
+    nbins = 158  # Number of bins for the RDF
     dr = 0.1  # Bin width
 
     # Initialize histograms for the RDF calculation
