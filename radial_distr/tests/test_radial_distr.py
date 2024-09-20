@@ -13,7 +13,7 @@ import pytest
 
 import subprocess
 
-import radial_distr  
+import radial_distr.radial_distr as radial_distr  
 
 import gridData
 
