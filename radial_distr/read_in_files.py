@@ -37,7 +37,9 @@ def ray_intersects_triangle(p, V, A, B, C):
     AB = B - A
     AC = C - A
     n = np.cross(AB, AC) # n is normal vector to the plane
-    n = n / np.linalg.norm(n)
+#    n = n / np.linalg.norm(n) This version was not working with numba
+    norm_n = np.sqrt(np.dot(n, n))  # Manually compute the norm
+    n = n / norm_n
     d = np.dot(n, A)
     denom = np.dot(n, V)
     if (denom == 0):
@@ -49,7 +51,7 @@ def ray_intersects_triangle(p, V, A, B, C):
      #print(" value of A dotted with p is", np.dot(A, p))
      #print(" value of n dotted with V is", np.dot(n, V))
     
-    t = (d - np.dot(n,p)) / np.dot(n, V)
+    t = (d - np.dot(n,p)) / denom
     #print(" value of t is", t)
     #Compute the intersection point Q
     Q = p + t * V
