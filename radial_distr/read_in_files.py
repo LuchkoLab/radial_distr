@@ -33,17 +33,23 @@ def load_stl():
 # p is origin of the ray, V is the direction unit vector originating from point p, t scales V to reach the point on the plane Q, and A,B,C are the points of the triangle
 @numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def ray_intersects_triangle(p, V, A, B, C):
+    # Convert all to d type float 32
+    p = p.astype(np.float32)
+    V = V.astype(np.float32)
+    A = A.astype(np.float32)
+    B = B.astype(np.float32)
+    C = C.astype(np.float32)
     # Compute the plane's normal vector
-    AB = B - A
-    AC = C - A
-    n = np.cross(AB, AC) # n is normal vector to the plane
+    AB = (B - A).astype(np.float32)
+    AC = (C - A).astype(np.float32)
+    n = np.cross(AB, AC).astype(np.float32) # n is normal vector to the plane
 #    n = n / np.linalg.norm(n) This version was not working with numba
-    norm_n = np.sqrt(np.dot(n, n))  # Manually compute the norm
+    norm_n = np.float32(np.sqrt(np.dot(n, n)))  # Manually compute the norm
     n = n / norm_n
-    d = np.dot(n, A)
-    denom = np.dot(n, V)
+    d = np.float32(np.dot(n, A))
+    denom = np.float32(np.dot(n, V))
     if (denom == 0):
-       return np.inf, np.array([0,0,0])
+       return np.inf, np.array([0,0,0], dtype=np.float32)
      #Compute the scalar t for the intersection point
      #print(" value of p is", p)
      #print(" value of d is", d)
@@ -57,7 +63,7 @@ def ray_intersects_triangle(p, V, A, B, C):
     Q = p + t * V
 
     return t,Q
-
+@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_in_triangle(A, B, C, Q):
     AB = B -A
     AC = C - A
@@ -82,7 +88,7 @@ def is_point_in_triangle(A, B, C, Q):
         return True  # Q is inside the triangle
     else:
         return False  # Q is outside the triangle
-
+@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def inside_outside(gridpoint, V, A, B, C):
     t,Q = ray_intersects_triangle(p,V, A, B, C)
     if  t >= 0 and not t == np.inf:
@@ -125,6 +131,7 @@ def load_dx(dx_file_path):
     return np.array(midpoints)
 
 # Function to check if a point is inside the mesh using ray casting
+@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_inside_mesh(gridpoint, model_mesh):
     
     ray_direction = np.array([1.0, 0.0, 0.0])  # Arbitrary ray direction
