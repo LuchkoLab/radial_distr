@@ -128,15 +128,15 @@ def load_dx(dx_file_path):
     #print(midpoints)            
     
 
-    return np.array(midpoints)
+    return np.array(midpoints), grid
 
 # Function to check if a point is inside the mesh using ray casting
 @numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
-def is_point_inside_mesh(gridpoint, model_mesh):
+def is_point_inside_mesh(gridpoint, facets):
     
     ray_direction = np.array([1.0, 0.0, 0.0])  # Arbitrary ray direction
     intersections = 0
-    for facet in model_mesh.vectors:
+    for facet in facets:
         A, B, C = facet
         t, Q = ray_intersects_triangle(gridpoint, ray_direction, A, B, C)
         if t >= 0 and is_point_in_triangle(A, B, C, Q):
@@ -145,14 +145,15 @@ def is_point_inside_mesh(gridpoint, model_mesh):
     return intersections % 2 == 1
 
 #Function to label points inside or outside the mesh
-def label_points_in_mesh(points, model_mesh):
+@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
+def label_points_in_mesh(points, facets):
     labels = np.ones(len(points))  # Initialize all points as outside (1)
     
     for i, point in enumerate(points):
     
-        if is_point_inside_mesh(point, model_mesh):
+        if is_point_inside_mesh(point, facets):
             labels[i] = 0  # Label as 0 if inside the mesh
-            
+        break
     return labels
 
 
@@ -160,10 +161,15 @@ def label_points_in_mesh(points, model_mesh):
 def main(stl_file_path, dx_file_path):
     model_mesh = load_stl()
     #print("The facets are", facets)
-    for gridpoint in load_dx(dx_file_path):
-        print(gridpoint)
-        inside = is_point_inside_mesh(gridpoint, model_mesh)
-        break
+    #for gridpoint in load_dx(dx_file_path):
+    #    print("gridpoint", gridpoint)
+        # inside = is_point_inside_mesh(gridpoint, model_mesh.vectors)
+        # break
+    gridpoints, grid = load_dx(dx_file_path)
+    labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
+    labels = labels.reshape(grid.grid.shape)
+    grid.grid = labels
+    grid.export("inside_out_labels.dx")
 
 
 
