@@ -5,13 +5,37 @@ import MDAnalysis as mda
 import parmed as pmd
 import mrcfile 
 import numba
+import argparse
 
 '''This module takes in .stl and .mrc or .dx data, and it determines whether points lie inside or outside of a surface created by a .stl file '''
 
+# Main function to run the script
+def main(stl_file_path, dx_file_path):
+    
+    model_mesh = load_stl(stl_file_path)
+    load_dx(dx_file_path)
 
-def load_stl():
+    gridpoints, grid = load_dx(dx_file_path)
+    labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
+    labels = labels.reshape(grid.grid.shape)
+    grid.grid = labels
+    grid.export("inside_out_labels.dx")
+
+def get_args():
+    parser = argparse.ArgumentParser(prog='read_in_files.py', description="Load .stl and .dx files needed for read_in_files to do raycasting.")
+
+    # Define expected command-line arguments
+    parser.add_argument('--stl', help='path to stl file expected', required=True)
+    parser.add_argument('--dx', help='path to dx file',required=True)
+    args = parser.parse_args()
+    return args
+
+
+
+
+def load_stl(stl_file_path):
     #Read in .stl file
-    model_mesh = mesh.Mesh.from_file('/home/tyork/ribosome/radial_distr/radial_distr/tests/ala.stl')
+    model_mesh = mesh.Mesh.from_file(stl_file_path)
 
     #test if file was loaded with print statement, we will try accessing the vertices of the mesh
     #print(ala_stl.vectors.shape)
@@ -153,30 +177,14 @@ def label_points_in_mesh(points, facets):
     
         if is_point_inside_mesh(point, facets):
             labels[i] = 0  # Label as 0 if inside the mesh
-        break
+    
+        
     return labels
-
-
-# Main function to run the script
-def main(stl_file_path, dx_file_path):
-    model_mesh = load_stl()
-    #print("The facets are", facets)
-    #for gridpoint in load_dx(dx_file_path):
-    #    print("gridpoint", gridpoint)
-        # inside = is_point_inside_mesh(gridpoint, model_mesh.vectors)
-        # break
-    gridpoints, grid = load_dx(dx_file_path)
-    labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
-    labels = labels.reshape(grid.grid.shape)
-    grid.grid = labels
-    grid.export("inside_out_labels.dx")
-
-
-
 
 # Run the script with example files
 if __name__ == "__main__":
-    stl_file = '/home/tyork/ribosome/radial_distr/radial_distr/tests/ala.stl'
-    dx_file = '/home/tyork/ribosome/radial_distr/radial_distr/tests/guv.O.5.dx'
-    main(stl_file, dx_file)
+    #stl_file = '/home/tyork/ribosome/radial_distr/radial_distr/tests/ala.stl'
+    #dx_file = '/home/tyork/ribosome/radial_distr/radial_distr/tests/guv.O.5.dx'
+    args = get_args()
+    main(args.stl, args.dx)
 
