@@ -163,21 +163,21 @@ def is_point_inside_mesh(gridpoint, facets):
     
     ray_direction = np.array([0.0, 0.0, 1.0])  # Arbitrary ray direction
     intersections = 0
-    t_vals = np.zeros(len(facets))
+    t_vals = [] 
 #    Q_vals = np.zeros(len(facets),dtype=np.float32)
     for facet in facets:
         A, B, C = facet
         t, Q = ray_intersects_triangle(gridpoint, ray_direction, A, B, C)
         if t >= 0 and is_point_in_triangle(A, B, C, Q):
             
-            t_vals[intersections] = t
+            t_vals.append(t)
 #            Q_vals[intersections] = Q
             intersections += 1
-    # Point is inside the mesh if the number of intersections is odd
     
     
     
-    return intersections % 2 == 1, (t_vals)
+    
+    return intersections % 2 == 1, np.array(t_vals)
 
 #Function to label points inside or outside the mesh
 #@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
