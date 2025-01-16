@@ -16,10 +16,13 @@ def main(stl_file_path, dx_file_path):
     load_dx(dx_file_path)
 
     gridpoints, grid = load_dx(dx_file_path)
+    gridpoints = gridpoints.reshape(list(grid.grid.shape)+[3])
     labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
-    labels = labels.reshape(grid.grid.shape)
-    grid.grid = labels
-    grid.export("inside_out_labels.dx")
+    # labels = labels.reshape(grid.grid.shape)
+    # grid.grid = labels
+    # grid.export("tests/data/inside_out_labels.dx")
+
+
 
 def get_args():
     parser = argparse.ArgumentParser(prog='read_in_files.py', description="Load .stl and .dx files needed for read_in_files to do raycasting.")
@@ -86,7 +89,7 @@ def ray_intersects_triangle(p, V, A, B, C):
     #Compute the intersection point Q
     Q = p + t * V
 
-    return t,Q
+    return t, Q
 @numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_in_triangle(A, B, C, Q):
     AB = B -A
@@ -158,25 +161,57 @@ def load_dx(dx_file_path):
 @numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_inside_mesh(gridpoint, facets):
     
-    ray_direction = np.array([1.0, 0.0, 0.0])  # Arbitrary ray direction
+    ray_direction = np.array([0.0, 0.0, 1.0])  # Arbitrary ray direction
     intersections = 0
+    t_vals = np.zeros(len(facets))
+#    Q_vals = np.zeros(len(facets),dtype=np.float32)
     for facet in facets:
         A, B, C = facet
         t, Q = ray_intersects_triangle(gridpoint, ray_direction, A, B, C)
         if t >= 0 and is_point_in_triangle(A, B, C, Q):
+            
+            t_vals[intersections] = t
+#            Q_vals[intersections] = Q
             intersections += 1
     # Point is inside the mesh if the number of intersections is odd
-    return intersections % 2 == 1
+    
+    
+    
+    return intersections % 2 == 1, (t_vals)
 
 #Function to label points inside or outside the mesh
-@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
+#@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def label_points_in_mesh(points, facets):
-    labels = np.ones(len(points))  # Initialize all points as outside (1)
+    labels = np.ones((points.shape[0], points.shape[1]))  # Initialize all points as outside (1)
     
-    for i, point in enumerate(points):
     
-        if is_point_inside_mesh(point, facets):
-            labels[i] = 0  # Label as 0 if inside the mesh
+    for ix in range(points.shape[0]):
+        for iy in range(points.shape[1]):
+            point = points[ix, iy]
+            inside, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
+            print("======")
+            print (points[ix, iy, 0], t_vals)
+            #for iz in range(1,points.shape[2]):
+                
+                # if Q is not None:
+                #     z_dist = Q[2] - point[2]
+                #     t_vals.append(z_dist)
+            
+                #     n_pos = np.sum(t_vals > 0)
+                #     n_neg = np.sum(t_vals < 0)   
+                #     if n_pos % 2 == 0 and n_neg % 2 == 0 and (n_pos + n_neg) > 0:
+                #         labels[ix, iy] = 0
+                #         #labels.append("inside")
+                #     else:
+                #         #labels.append("outside")
+                #         labels[ix,iy] = 1   
+
+#    # for i, point in enumerate(points):
+#         inside, t_vals = is_point_inside_mesh(point, facets)
+#         if i < 10:
+#             print (point, t_vals)
+#         if inside:
+#             labels[i] = 0  # Label as 0 if inside the mesh
     
         
     return labels
