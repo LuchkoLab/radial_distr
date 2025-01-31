@@ -18,9 +18,9 @@ def main(stl_file_path, dx_file_path):
     gridpoints, grid = load_dx(dx_file_path)
     gridpoints = gridpoints.reshape(list(grid.grid.shape)+[3])
     labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
-    # labels = labels.reshape(grid.grid.shape)
-    # grid.grid = labels
-    # grid.export("tests/data/inside_out_labels.dx")
+    labels = labels.reshape(grid.grid.shape)
+    grid.grid = labels
+    grid.export("tests/data/inside_out_labels.dx")
 
 
 
@@ -29,6 +29,7 @@ def get_args():
 
     # Define expected command-line arguments
     parser.add_argument('--stl', help='path to stl file expected', required=True)
+    #need to add argument for user to give name
     parser.add_argument('--dx', help='path to dx file',required=True)
     args = parser.parse_args()
     return args
@@ -44,7 +45,7 @@ def load_stl(stl_file_path):
     #print(ala_stl.vectors.shape)
 
     #Access the number of facets
-    print(f"Number of facets: {model_mesh.vectors.shape[0]}")
+#    print(f"Number of facets: {model_mesh.vectors.shape[0]}")
 
     #Access and print an array containing the normal vectors for each facet
     #print(ala_stl.normals)
@@ -136,11 +137,11 @@ def load_dx(dx_file_path):
     midpoints = grid.midpoints
     edges = grid.edges
     delta = grid.delta
-    print("Grid Shape:", grid_shape)
-    print("Origin:", origin)
-    print("Midpoints:", midpoints)
-    print("Edges:", edges)
-    print("D(x) value:", delta)    #Iterate through and print grid values
+#    print("Grid Shape:", grid_shape)
+#    print("Origin:", origin)
+#    print("Midpoints:", midpoints)
+#    print("Edges:", edges)
+#    print("D(x) value:", delta)    #Iterate through and print grid values
     
     #loop through all midpoints
     midpoints = []
@@ -182,36 +183,32 @@ def is_point_inside_mesh(gridpoint, facets):
 #Function to label points inside or outside the mesh
 #@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def label_points_in_mesh(points, facets):
-    labels = np.ones((points.shape[0], points.shape[1]))  # Initialize all points as outside (1)
+    labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
     
     
     for ix in range(points.shape[0]):
         for iy in range(points.shape[1]):
             point = points[ix, iy]
             inside, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
-            print("======")
-            print (points[ix, iy, 0], t_vals)
-            #for iz in range(1,points.shape[2]):
-                
-                # if Q is not None:
-                #     z_dist = Q[2] - point[2]
-                #     t_vals.append(z_dist)
-            
-                #     n_pos = np.sum(t_vals > 0)
-                #     n_neg = np.sum(t_vals < 0)   
-                #     if n_pos % 2 == 0 and n_neg % 2 == 0 and (n_pos + n_neg) > 0:
-                #         labels[ix, iy] = 0
-                #         #labels.append("inside")
-                #     else:
-                #         #labels.append("outside")
-                #         labels[ix,iy] = 1   
+            if t_vals.size == 0:
+                labels[ix, iy] = 1  # Outside
+                continue 
+           
+           # print("======")
+           # print (points[ix, iy, 0], t_vals)
+#if t_vals is an empty array, then that ray has zero intersections,stay outside
 
-#    # for i, point in enumerate(points):
-#         inside, t_vals = is_point_inside_mesh(point, facets)
-#         if i < 10:
-#             print (point, t_vals)
-#         if inside:
-#             labels[i] = 0  # Label as 0 if inside the mesh
+            for iz in range(1,points.shape[2]):
+            
+                i_t_vals = t_vals - (points[ix,iy, iz,2] - points[ix, iy,0,2])
+                n_pos = np.sum(i_t_vals > 0)
+                n_neg = np.sum(i_t_vals < 0)   
+                if n_pos % 2 == 0 and n_neg % 2 == 0 and (n_pos + n_neg) > 0:
+                    labels[ix, iy, iz] = 1
+                         
+                else:
+                        
+                    labels[ix,iy,iz] = 0   
     
         
     return labels

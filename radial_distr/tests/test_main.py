@@ -29,6 +29,4 @@ def test_main():
     assert os.path.exists(generated_file_path), "Generated file not found."
     assert filecmp.cmp(generated_file_path, ref_file_path, shallow=False), "Generated file does not match reference file."
 
-    #Should I check grid data such as shape?
-
     assert True
