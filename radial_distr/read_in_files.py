@@ -181,12 +181,12 @@ def is_point_inside_mesh(gridpoint, facets):
     return intersections % 2 == 1, np.array(t_vals)
 
 #Function to label points inside or outside the mesh
-#@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=True,nopython=True, nogil=True,parallel=True,fastmath=True)
 def label_points_in_mesh(points, facets):
     labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
     
     
-    for ix in range(points.shape[0]):
+    for ix in numba.prange(points.shape[0]):
         for iy in range(points.shape[1]):
             point = points[ix, iy]
             inside, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
