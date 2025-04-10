@@ -6,8 +6,8 @@ import parmed as pmd
 import mrcfile 
 import numba
 import argparse
-
-'''This module takes in .stl and .mrc or .dx data, and it determines whether points lie inside or outside of a surface created by a .stl file '''
+import time
+'''This module takes in .stl and .mrc or .dx data, and it determines whether points lie inside or outside of a surface created by a .stl file then outputs the data to a .dx file'''
 
 # Main function to run the script
 def main(stl_file_path, dx_file_path):
@@ -16,11 +16,16 @@ def main(stl_file_path, dx_file_path):
     load_dx(dx_file_path)
 
     gridpoints, grid = load_dx(dx_file_path)
+    
     gridpoints = gridpoints.reshape(list(grid.grid.shape)+[3])
+    starttime = time.perf_counter()
     labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
+    endtime = time.perf_counter()
     labels = labels.reshape(grid.grid.shape)
+    print(f"{endtime - starttime}")
     grid.grid = labels
-    grid.export("tests/data/inside_out_labels.dx")
+#this outputs the new .dx/.mrc file into this directory tests/data/inside_out_labels.dx
+    grid.export("ribo_data/inside_out_labels.dx")
 
 
 
@@ -28,9 +33,12 @@ def get_args():
     parser = argparse.ArgumentParser(prog='read_in_files.py', description="Load .stl and .dx files needed for read_in_files to do raycasting.")
 
     # Define expected command-line arguments
-    parser.add_argument('--stl', help='path to stl file expected', required=True)
-    #need to add argument for user to give name
-    parser.add_argument('--dx', help='path to dx file',required=True)
+    parser.add_argument('--stl', help='path to stl file expected', required=True) #stl file required
+    
+    parser.add_argument('--dx', help='path to dx file',required=True) #dx or mrc file required
+
+    #parser.add_argumet('--output_dx', help='path and name for output dx file',required=True) #path and name to be given to output dx file
+
     args = parser.parse_args()
     return args
 
@@ -118,8 +126,7 @@ def is_point_in_triangle(A, B, C, Q):
         return False  # Q is outside the triangle
 @numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def inside_outside(gridpoint, V, A, B, C):
-    t,Q = ray_intersects_triangle(p,V, A, B, C)
-    if  t >= 0 and not t == np.inf:
+    t,Q = ray_intersects_triangle(p,V, A, B, C)    if  t >= 0 and not t == np.inf:
         return True and is_point_in_triangle(A,B,C,Q)
     else:
         return False
@@ -158,6 +165,65 @@ def load_dx(dx_file_path):
 
     return np.array(midpoints), grid
 
+def is_point_near_facet(gridpoint, facet):
+    """
+    Check if a grid point (x, y, z) is near a facet in 3D space.
+
+    Args:
+        gridpoint: The 3D coordinate of the grid point [x, y, z].
+        facet: A list of three vertices defining the facet (triangle) in 3D.
+
+    Returns:
+        bool: True if the gridpoint is near any facet in the x, y, or z direction. False if not.
+    """
+    # Extract the facet's x, y, z coordinates
+    A, B, C = facet  
+
+    # Get min/max values for x, y from the facet's vertices
+    min_x, max_x = min(A[0], B[0], C[0]), max(A[0], B[0], C[0])
+    min_y, max_y = min(A[1], B[1], C[1]), max(A[1], B[1], C[1])
+
+
+    # Get gridpoint (x, y, z)
+    x, y, z = gridpoint
+
+    # If the gridpoint is completely outside the facet's x, y, or z bounds, exclude it
+    if (x < min_x or x > max_x or 
+        y < min_y or y > max_y:
+        return False  # Exclude this gridpoint if no facet is near
+
+    return True  # Keep gridpoint if it's within the facet's bounds
+
+def filter_all_grid_slices_near_facets(grid, facets):
+    """
+    Filters grid points from all Z-slices that are near any facet.
+
+    Args:
+        grid (np.ndarray): 4D array of grid points (Nx, Ny, Nz, 3).
+        facets (list): List of triangle facets.
+
+    Returns:
+        list: Filtered grid points across all slices.
+    """
+    filtered_points = []
+
+    for z_index in range(grid.shape[2]):  # Loop through all Z-layers
+        for ix in range(grid.shape[0]):
+            for iy in range(grid.shape[1]):
+                gridpoint = grid[ix, iy, z_index]
+
+                for facet in facets:
+                    if is_point_near_facet(gridpoint, facet):
+                        filtered_points.append(gridpoint)
+                        break
+
+    return filtered_points
+
+
+
+
+
+
 # Function to check if a point is inside the mesh using ray casting
 @numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_inside_mesh(gridpoint, facets):
@@ -168,6 +234,7 @@ def is_point_inside_mesh(gridpoint, facets):
 #    Q_vals = np.zeros(len(facets),dtype=np.float32)
     for facet in facets:
         A, B, C = facet
+        
         t, Q = ray_intersects_triangle(gridpoint, ray_direction, A, B, C)
         if t >= 0 and is_point_in_triangle(A, B, C, Q):
             
@@ -184,12 +251,14 @@ def is_point_inside_mesh(gridpoint, facets):
 @numba.jit(cache=True,nopython=True, nogil=True,parallel=True,fastmath=True)
 def label_points_in_mesh(points, facets):
     labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
-    
+
     
     for ix in numba.prange(points.shape[0]):
         for iy in range(points.shape[1]):
             point = points[ix, iy]
+            print(len(facets))
             inside, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
+            break
             if t_vals.size == 0:
                 labels[ix, iy] = 1  # Outside
                 continue 
@@ -209,8 +278,9 @@ def label_points_in_mesh(points, facets):
                 else:
                         
                     labels[ix,iy,iz] = 0   
-    
-        
+            
+        break
+
     return labels
 
 # Run the script with example files
