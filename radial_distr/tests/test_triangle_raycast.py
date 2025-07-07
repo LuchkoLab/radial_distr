@@ -2,6 +2,7 @@ import pytest
 import radial_distr.triangle_raycast as triangle_raycast
 import sys
 import numpy as np
+import radial_distr.find_inside_out_points as find_inside_out_points
 
 def test_triangle_raycast_imported():
     """Sample test, will always pass so long as import statement worked"""
@@ -62,3 +63,36 @@ def test_t_not_in_triangle():
     - The function returns 'False' because the intersection points lies outside of the triangle """
     outside = triangle_raycast.inside_outside(np.array([1,0,0.5]), np.array([0,0,1]), np.array([-1,0,0]), np.array([0,1,0]), np.array([1,0,0]))
     assert outside == False 
+
+
+def test_point_inside_bounds():
+    """
+    Tests that a point within a triangle's bounding box returns True.
+    Input:
+    - A triangle and a point that is inside of the bounding box
+    Expected Output:
+    - The function returns 'True' because the point is inside of the bounding box
+    """
+    point = np.array([2, 2, 0])
+    facet = [
+        np.array([1, 1, 0]),
+        np.array([3, 1, 0]),
+        np.array([2, 3, 0])
+    ]
+    assert find_inside_out_points.is_point_near_facet(point, facet) == True
+
+def test_point_outside_bounds():
+    """
+    Tests that a point outside a triangle's bounding box returns False.
+    Input:
+    - A triangle and a point outside the bounding box
+    Expected output
+    - The function reeturns 'False' because the point is outside of the bounding box
+    """
+    point = np.array([5, 5, 0])
+    facet = [
+        np.array([1, 1, 0]),
+        np.array([3, 1, 0]),
+        np.array([2, 3, 0])
+    ]
+    assert find_inside_out_points.is_point_near_facet(point, facet) == False

@@ -9,8 +9,24 @@ import argparse
 import time
 '''This module takes in .stl and .mrc or .dx data, and it determines whether points lie inside or outside of a surface created by a .stl file then outputs the data to a .dx file'''
 
-# Main function to run the script
 def main(stl_file_path, dx_file_path):
+
+    """
+    Loads a 3D STL model and a .dx volumetric grid, labels grid points as inside or outside 
+    the mesh, and exports a new labeled .dx file.
+
+    Parameters:
+    -----------
+    stl_file_path : str
+        Path to the STL file representing the 3D mesh.
+    dx_file_path : str
+        Path to the input .dx file containing the volumetric grid.
+
+    Outputs:
+    --------
+    - Prints the time taken to label all grid points.
+    - Writes a new .dx file with inside/outside labels to 'ribo_data/inside_out_labels.dx'.
+    """
     
     model_mesh = load_stl(stl_file_path)
     load_dx(dx_file_path)
@@ -24,7 +40,7 @@ def main(stl_file_path, dx_file_path):
     labels = labels.reshape(grid.grid.shape)
     print(f"{endtime - starttime}")
     grid.grid = labels
-#this outputs the new .dx/.mrc file into this directory tests/data/inside_out_labels.dx
+#this outputs the new .dx file into this directory ribo_data/inside_out_labels.dx
     grid.export("ribo_data/inside_out_labels.dx")
 
 
@@ -37,7 +53,7 @@ def get_args():
     
     parser.add_argument('--dx', help='path to dx file',required=True) #dx or mrc file required
 
-    #parser.add_argumet('--output_dx', help='path and name for output dx file',required=True) #path and name to be given to output dx file
+    parser.add_argumet('--output_dx', help='path and name for output dx file',required=True) #path and name to be given to output dx file
 
     args = parser.parse_args()
     return args
@@ -126,7 +142,8 @@ def is_point_in_triangle(A, B, C, Q):
         return False  # Q is outside the triangle
 @numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def inside_outside(gridpoint, V, A, B, C):
-    t,Q = ray_intersects_triangle(p,V, A, B, C)    if  t >= 0 and not t == np.inf:
+    t,Q = ray_intersects_triangle(p,V, A, B, C)
+    if  t >= 0 and not t == np.inf:
         return True and is_point_in_triangle(A,B,C,Q)
     else:
         return False
@@ -188,8 +205,9 @@ def is_point_near_facet(gridpoint, facet):
     x, y, z = gridpoint
 
     # If the gridpoint is completely outside the facet's x, y, or z bounds, exclude it
-    if (x < min_x or x > max_x or 
-        y < min_y or y > max_y:
+    if (
+        x < min_x or x > max_x or 
+        y < min_y or y > max_y):
         return False  # Exclude this gridpoint if no facet is near
 
     return True  # Keep gridpoint if it's within the facet's bounds
@@ -219,11 +237,18 @@ def filter_all_grid_slices_near_facets(grid, facets):
 
     return filtered_points
 
+def check_filtered_points(filtered_points, facets):
+        """check each filtered points to see if it is inside or outside of mesh."""
+        checked_points = []
+
+        for point in filtered_points:
+            inside, t_vals = is_point_inside_mesh(point, facets)
+        checked_points.append((point, inside, t_vals))
+        return checked_points
 
 
 
-
-
+        
 # Function to check if a point is inside the mesh using ray casting
 @numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_inside_mesh(gridpoint, facets):
@@ -278,8 +303,8 @@ def label_points_in_mesh(points, facets):
                 else:
                         
                     labels[ix,iy,iz] = 0   
-            
-        break
+       # uncomment this line to check for a single point    
+       # break
 
     return labels
 
@@ -289,4 +314,4 @@ if __name__ == "__main__":
     #dx_file = '/home/tyork/ribosome/radial_distr/radial_distr/tests/guv.O.5.dx'
     args = get_args()
     main(args.stl, args.dx)
-
+    filtered_points = filter_all_grid_slices_near_facets(grid, facets)

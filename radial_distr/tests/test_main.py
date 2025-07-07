@@ -1,5 +1,5 @@
 import pytest
-import radial_distr.read_in_files as rif
+import radial_distr.find_inside_out_points as rif
 import sys
 import numpy as np
 import os
@@ -8,7 +8,7 @@ import filecmp
 
 def test_main_imported():
     """Sample test, will always pass so long as import statement worked"""
-    assert "radial_distr.read_in_files" in sys.modules
+    assert "radial_distr.find_inside_out_points" in sys.modules
 
 def test_main():
     '''Test the main function to be sure it processes the files correctly, and the generated file is compared to a reference file for correctness'''
@@ -30,3 +30,5 @@ def test_main():
     assert filecmp.cmp(generated_file_path, ref_file_path, shallow=False), "Generated file does not match reference file."
 
     assert True
+
+    
