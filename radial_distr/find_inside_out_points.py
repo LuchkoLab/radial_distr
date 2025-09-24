@@ -9,7 +9,7 @@ import argparse
 import time
 '''This module takes in .stl and .mrc or .dx data, and it determines whether points lie inside or outside of a surface created by a .stl file then outputs the data to a .dx file'''
 
-def main(stl_file_path, dx_file_path):
+def main(stl_file_path, dx_file_path, output_file_path):
 
     """
     Loads a 3D STL model and a .dx volumetric grid, labels grid points as inside or outside 
@@ -29,10 +29,9 @@ def main(stl_file_path, dx_file_path):
     """
     
     model_mesh = load_stl(stl_file_path)
-    load_dx(dx_file_path)
-
-    gridpoints, grid = load_dx(dx_file_path)
     
+    gridpoints, grid = load_dx(dx_file_path)
+    print("files loaded")
     gridpoints = gridpoints.reshape(list(grid.grid.shape)+[3])
     starttime = time.perf_counter()
     labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
@@ -40,8 +39,9 @@ def main(stl_file_path, dx_file_path):
     labels = labels.reshape(grid.grid.shape)
     print(f"{endtime - starttime}")
     grid.grid = labels
-#this outputs the new .dx file into this directory ribo_data/inside_out_labels.dx
-    grid.export("ribo_data/inside_out_labels.dx")
+    #this outputs the new .dx file into this directory ribo_data/inside_out_labels.dx
+    
+    grid.export(output_file_path)
 
 
 
@@ -53,7 +53,7 @@ def get_args():
     
     parser.add_argument('--dx', help='path to dx file',required=True) #dx or mrc file required
 
-    parser.add_argumet('--output_dx', help='path and name for output dx file',required=True) #path and name to be given to output dx file
+    parser.add_argument('--output_dx', help='path and name for output dx file',required=True) #path and name to be given to output dx file
 
     args = parser.parse_args()
     return args
@@ -255,41 +255,51 @@ def is_point_inside_mesh(gridpoint, facets):
     
     ray_direction = np.array([0.0, 0.0, 1.0])  # Arbitrary ray direction
     intersections = 0
-    t_vals = [] 
+    t_vals = np.zeros(len(facets),dtype=np.float32)
+    
 #    Q_vals = np.zeros(len(facets),dtype=np.float32)
     for facet in facets:
         A, B, C = facet
         
         t, Q = ray_intersects_triangle(gridpoint, ray_direction, A, B, C)
+     #   print("t value is", t)
+     #   print("is_point_in_triangle values", is_point_in_triangle(A, B, C, Q))
+     #   print("Facet vertices")
+     #   print("  A:", A)
+     #   print("  B:", B)
+     #   print("  C:", C)
+     #   print("Q is :", Q)
         if t >= 0 and is_point_in_triangle(A, B, C, Q):
+            t_vals[intersections] = t
             
-            t_vals.append(t)
-#            Q_vals[intersections] = Q
+           
             intersections += 1
     
+    t_vals = t_vals[0:intersections]
+    #print("t_vals", t_vals)
     
-    
-    
-    return intersections % 2 == 1, np.array(t_vals)
+    return intersections % 2 == 1, t_vals
 
 #Function to label points inside or outside the mesh
-@numba.jit(cache=True,nopython=True, nogil=True,parallel=True,fastmath=True)
+@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
 def label_points_in_mesh(points, facets):
     labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
 
-    
-    for ix in numba.prange(points.shape[0]):
-        for iy in range(points.shape[1]):
+    print("points.shape", points.shape)
+    for ix in numba.prange(points.shape[0]):#(int(points.shape[0]/2),int(points.shape[0]/2 +1)):
+        print("ix", ix)
+        for iy in range(points.shape[1]):#(int(points.shape[1]/2),int(points.shape[1]/2 +1)):
             point = points[ix, iy]
-            print(len(facets))
+            print("len(facets)", len(facets))
             inside, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
-            break
+            print("inside and t_vals", inside, t_vals)
+            #break
             if t_vals.size == 0:
                 labels[ix, iy] = 1  # Outside
                 continue 
            
-           # print("======")
-           # print (points[ix, iy, 0], t_vals)
+            print("======")
+            print (points[ix, iy, 0], t_vals)
 #if t_vals is an empty array, then that ray has zero intersections,stay outside
 
             for iz in range(1,points.shape[2]):
@@ -305,7 +315,6 @@ def label_points_in_mesh(points, facets):
                     labels[ix,iy,iz] = 0   
        # uncomment this line to check for a single point    
        # break
-
     return labels
 
 # Run the script with example files
@@ -313,5 +322,5 @@ if __name__ == "__main__":
     #stl_file = '/home/tyork/ribosome/radial_distr/radial_distr/tests/ala.stl'
     #dx_file = '/home/tyork/ribosome/radial_distr/radial_distr/tests/guv.O.5.dx'
     args = get_args()
-    main(args.stl, args.dx)
+    main(args.stl, args.dx, args.output_dx)
     filtered_points = filter_all_grid_slices_near_facets(grid, facets)
