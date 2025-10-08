@@ -124,7 +124,13 @@ def compute_rad_dist(coordinates, grid, midpoints, max_cutoff=20, nworkers = 1):
     # print(hist_all)
     # print(rdf_all)
     hist = hist_all.sum(axis=0)
-    rdf = rdf_all.sum(axis=0)/hist
+#The following is the original line which was replaced with the with statement
+#    rdf = rdf_all.sum(axis=0)/hist
+    with np.errstate(divide='ignore', invalid='ignore'):
+        rdf = np.divide(rdf_all.sum(axis=0), hist, out=np.zeros_like(hist, dtype=float), where=hist!=0)
+
+
+
     return rdf, dr
 
 def worker(args):
