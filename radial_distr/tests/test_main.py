@@ -2,7 +2,7 @@ import pytest
 import radial_distr.find_inside_out_points as rif
 import sys
 import numpy as np
-import os
+import os, os.path
 import filecmp
 
 
@@ -16,18 +16,17 @@ def test_main():
     print("Current directory", cwd)
 
     #Define file paths
-    stl_file_path = "tests/data/ala.stl"
-    dx_file_path  = "tests/data/guv.O.5.dx"
-    ref_file_path = "tests/data/ref_ala_mask.dx"
-    rif.main(stl_file_path, dx_file_path)
-    generated_file_path = "tests/data/inside_out_labels.dx"
-
-    #Call main function in read_in_files
-    rif.main(stl_file_path, dx_file_path)
+    path = os.path.dirname(__file__)
+    print ("stl file", path)
+    stl_file_path = os.path.join(path,"data/ala.stl")
+    dx_file_path  = os.path.join(path,"data/guv.O.5.dx")
+    output_file_path = os.path.join(path,"data/inside_out_labels.dx")
+    ref_file_path = os.path.join(path,"data/ref_ala_mask.dx")
+    rif.main(stl_file_path, dx_file_path, output_file_path)
 
     #Compare reference file to generated file
-    assert os.path.exists(generated_file_path), "Generated file not found."
-    assert filecmp.cmp(generated_file_path, ref_file_path, shallow=False), "Generated file does not match reference file."
+    assert os.path.exists(output_file_path), "Generated file not found."
+    assert filecmp.cmp(output_file_path, ref_file_path, shallow=False), "Generated file does not match reference file."
 
     assert True
 
