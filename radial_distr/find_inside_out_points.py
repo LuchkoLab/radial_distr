@@ -250,7 +250,7 @@ def check_filtered_points(filtered_points, facets):
 
         
 # Function to check if a point is inside the mesh using ray casting
-@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=True,nopython=True, nogil=True,parallel=True,fastmath=True)
 def is_point_inside_mesh(gridpoint, facets):
     
     ray_direction = np.array([0.0, 0.0, 1.0])  # Arbitrary ray direction
