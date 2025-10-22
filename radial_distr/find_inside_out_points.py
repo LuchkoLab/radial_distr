@@ -27,20 +27,21 @@ def main(stl_file_path, dx_file_path, output_file_path):
     - Prints the time taken to label all grid points.
     - Writes a new .dx file with inside/outside labels to 'ribo_data/inside_out_labels.dx'.
     """
-    
+    print("Loading stl file")
     model_mesh = load_stl(stl_file_path)
-    
+    print("Loading dx")
     gridpoints, grid = load_dx(dx_file_path)
     print("files loaded")
     gridpoints = gridpoints.reshape(list(grid.grid.shape)+[3])
+    print("Labeling Points")
     starttime = time.perf_counter()
     labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
     endtime = time.perf_counter()
     labels = labels.reshape(grid.grid.shape)
-    print(f"{endtime - starttime}")
+    print(f"How much time it took {endtime - starttime}")
     grid.grid = labels
     #this outputs the new .dx file into this directory ribo_data/inside_out_labels.dx
-    
+    print("Outputing to file")
     grid.export(output_file_path)
 
 
@@ -83,7 +84,7 @@ def load_stl(stl_file_path):
     return model_mesh
 
 # p is origin of the ray, V is the direction unit vector originating from point p, t scales V to reach the point on the plane Q, and A,B,C are the points of the triangle
-@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def ray_intersects_triangle(p, V, A, B, C):
     # Convert all to d type float 32
     p = p.astype(np.float32)
@@ -115,7 +116,7 @@ def ray_intersects_triangle(p, V, A, B, C):
     Q = p + t * V
 
     return t, Q
-@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_in_triangle(A, B, C, Q):
     AB = B -A
     AC = C - A
@@ -140,7 +141,7 @@ def is_point_in_triangle(A, B, C, Q):
         return True  # Q is inside the triangle
     else:
         return False  # Q is outside the triangle
-@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def inside_outside(gridpoint, V, A, B, C):
     t,Q = ray_intersects_triangle(p,V, A, B, C)
     if  t >= 0 and not t == np.inf:
@@ -250,7 +251,7 @@ def check_filtered_points(filtered_points, facets):
 
         
 # Function to check if a point is inside the mesh using ray casting
-@numba.jit(cache=True,nopython=True, nogil=True,parallel=True,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=True)
 def is_point_inside_mesh(gridpoint, facets):
     
     ray_direction = np.array([0.0, 0.0, 1.0])  # Arbitrary ray direction
@@ -281,25 +282,25 @@ def is_point_inside_mesh(gridpoint, facets):
     return intersections % 2 == 1, t_vals
 
 #Function to label points inside or outside the mesh
-@numba.jit(cache=True,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def label_points_in_mesh(points, facets):
     labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
 
-    print("points.shape", points.shape)
+#    print("points.shape", points.shape)
     for ix in numba.prange(points.shape[0]):#(int(points.shape[0]/2),int(points.shape[0]/2 +1)):
-        print("ix", ix)
+#        print("ix", ix)
         for iy in range(points.shape[1]):#(int(points.shape[1]/2),int(points.shape[1]/2 +1)):
             point = points[ix, iy]
-            print("len(facets)", len(facets))
+#            print("len(facets)", len(facets))
             inside, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
-            print("inside and t_vals", inside, t_vals)
+#            print("inside and t_vals", inside, t_vals)
             #break
             if t_vals.size == 0:
                 labels[ix, iy] = 1  # Outside
                 continue 
            
-            print("======")
-            print (points[ix, iy, 0], t_vals)
+#            print("======")
+#            print (points[ix, iy, 0], t_vals)
 #if t_vals is an empty array, then that ray has zero intersections,stay outside
 
             for iz in range(1,points.shape[2]):
@@ -319,8 +320,6 @@ def label_points_in_mesh(points, facets):
 
 # Run the script with example files
 if __name__ == "__main__":
-    #stl_file = '/home/tyork/ribosome/radial_distr/radial_distr/tests/ala.stl'
-    #dx_file = '/home/tyork/ribosome/radial_distr/radial_distr/tests/guv.O.5.dx'
     args = get_args()
     main(args.stl, args.dx, args.output_dx)
-    filtered_points = filter_all_grid_slices_near_facets(grid, facets)
+   # filtered_points = filter_all_grid_slices_near_facets(grid, facets)
