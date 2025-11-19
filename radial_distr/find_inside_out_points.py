@@ -7,6 +7,8 @@ import mrcfile
 import numba
 import argparse
 import time
+import numba_progress 
+
 '''This module takes in .stl and .mrc or .dx data, and it determines whether points lie inside or outside of a surface created by a .stl file then outputs the data to a .dx file'''
 
 def main(stl_file_path, dx_file_path, output_file_path):
@@ -35,7 +37,8 @@ def main(stl_file_path, dx_file_path, output_file_path):
     gridpoints = gridpoints.reshape(list(grid.grid.shape)+[3])
     print("Labeling Points", flush=True)
     starttime = time.perf_counter()
-    labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
+    with numba_progress.ProgressBar(total=gridpoints.shape[0]) as pbar:
+        labels = label_points_in_mesh(gridpoints, model_mesh.vectors, pbar)
     endtime = time.perf_counter()
     labels = labels.reshape(grid.grid.shape)
     print(f"How much time it took {endtime - starttime}", flush=True)
@@ -283,7 +286,7 @@ def is_point_inside_mesh(gridpoint, facets):
 
 #Function to label points inside or outside the mesh
 @numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=True)
-def label_points_in_mesh(points, facets):
+def label_points_in_mesh(points, facets, pbar=None):
     labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
 
 #    print("points.shape", points.shape)
@@ -314,8 +317,10 @@ def label_points_in_mesh(points, facets):
                 else:
                         
                     labels[ix,iy,iz] = 0   
-       # uncomment this line to check for a single point    
-       # break
+        # uncomment this line to check for a single point    
+        # break
+        if pbar is not None:
+            pbar.update(1)
     return labels
 
 # Run the script with example files
