@@ -27,21 +27,21 @@ def main(stl_file_path, dx_file_path, output_file_path):
     - Prints the time taken to label all grid points.
     - Writes a new .dx file with inside/outside labels to 'ribo_data/inside_out_labels.dx'.
     """
-    print("Loading stl file")
+    print("Loading stl file", flush=True), 
     model_mesh = load_stl(stl_file_path)
-    print("Loading dx")
+    print("Loading dx", flush=True)
     gridpoints, grid = load_dx(dx_file_path)
-    print("files loaded")
+    print("files loaded", flush=True)
     gridpoints = gridpoints.reshape(list(grid.grid.shape)+[3])
-    print("Labeling Points")
+    print("Labeling Points", flush=True)
     starttime = time.perf_counter()
     labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
     endtime = time.perf_counter()
     labels = labels.reshape(grid.grid.shape)
-    print(f"How much time it took {endtime - starttime}")
+    print(f"How much time it took {endtime - starttime}", flush=True)
     grid.grid = labels
     #this outputs the new .dx file into this directory ribo_data/inside_out_labels.dx
-    print("Outputing to file")
+    print("Outputing to file", flush=True)
     grid.export(output_file_path)
 
 
@@ -251,7 +251,7 @@ def check_filtered_points(filtered_points, facets):
 
         
 # Function to check if a point is inside the mesh using ray casting
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_inside_mesh(gridpoint, facets):
     
     ray_direction = np.array([0.0, 0.0, 1.0])  # Arbitrary ray direction
@@ -282,7 +282,7 @@ def is_point_inside_mesh(gridpoint, facets):
     return intersections % 2 == 1, t_vals
 
 #Function to label points inside or outside the mesh
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=True)
 def label_points_in_mesh(points, facets):
     labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
 
