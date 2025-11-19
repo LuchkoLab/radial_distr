@@ -10,4 +10,5 @@ dependencies:
   - griddataformats  
   - numba  
   - mdanalysis  
- 
+  - pytest
+  - numpy-stl
