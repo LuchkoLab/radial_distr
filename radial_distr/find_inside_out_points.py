@@ -185,7 +185,7 @@ def load_dx(dx_file_path):
     
 
     return np.array(midpoints), grid
-
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_near_facet(gridpoint, facet):
     """
     Check if a grid point (x, y, z) is near a facet in 3D space.
@@ -263,6 +263,8 @@ def is_point_inside_mesh(gridpoint, facets):
     
 #    Q_vals = np.zeros(len(facets),dtype=np.float32)
     for facet in facets:
+        if not is_point_near_facet(gridpoint, facet):
+            continue  # Skip this facet if the gridpoint is not near it
         A, B, C = facet
         
         t, Q = ray_intersects_triangle(gridpoint, ray_direction, A, B, C)
