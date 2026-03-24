@@ -50,6 +50,12 @@ def main(stl_file_path, dx_file_path, output_file_path):
 
 
 def get_args():
+    """
+    Parse command-line arguments for the script.
+
+    Returns:
+        argparse.Namespace: Parsed command-line arguments containing paths to STL file, DX file, and output file.
+    """
     parser = argparse.ArgumentParser(prog='read_in_files.py', description="Load .stl and .dx files needed for read_in_files to do raycasting.")
 
     # Define expected command-line arguments
@@ -66,6 +72,15 @@ def get_args():
 
 
 def load_stl(stl_file_path):
+    """
+    Load a 3D mesh from an STL file.
+
+    Parameters:
+        stl_file_path (str): Path to the STL file.
+
+    Returns:
+        mesh.Mesh: The loaded mesh object containing vertices and facets.
+    """
     #Read in .stl file
     model_mesh = mesh.Mesh.from_file(stl_file_path)
 
@@ -102,6 +117,18 @@ def load_stl(stl_file_path):
 # p is origin of the ray, V is the direction unit vector originating from point p, t scales V to reach the point on the plane Q, and A,B,C are the points of the triangle
 @numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def ray_intersects_triangle(p, V, A, B, C):
+    """
+    Check if a ray intersects a triangle and return the intersection parameter and point.
+
+    Parameters:
+        p (np.ndarray): Origin point of the ray [x, y, z].
+        V (np.ndarray): Direction vector of the ray [vx, vy, vz].
+        A, B, C (np.ndarray): Vertices of the triangle [x, y, z].
+
+    Returns:
+        tuple: (t, Q) where t is the intersection parameter (np.inf if no intersection), 
+               and Q is the intersection point [x, y, z].
+    """
     # Convert all to d type float 32
     p = p.astype(np.float32)
     V = V.astype(np.float32)
@@ -134,6 +161,17 @@ def ray_intersects_triangle(p, V, A, B, C):
     return t, Q
 @numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_in_triangle(A, B, C, Q):
+    """
+    Check if a point Q lies inside the triangle defined by points A, B, C using barycentric coordinates.
+
+    Parameters:
+        A, B, C (np.ndarray): Vertices of the triangle [x, y, z].
+        Q (np.ndarray): Point to check [x, y, z].
+
+    Returns:
+        bool: True if Q is inside the triangle, False otherwise.
+    """
+    
     AB = B -A
     AC = C - A
     n = np.cross(AB, AC)
@@ -160,7 +198,19 @@ def is_point_in_triangle(A, B, C, Q):
 
 @numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def inside_outside(gridpoint, V, A, B, C):
-    t,Q = ray_intersects_triangle(p,V, A, B, C)
+    """
+    Determine if a point is inside or outside a triangle based on ray intersection.
+
+    Parameters:
+        gridpoint (np.ndarray): The point to check [x, y, z].
+        V (np.ndarray): Ray direction vector [vx, vy, vz].
+        A, B, C (np.ndarray): Vertices of the triangle [x, y, z].
+
+    Returns:
+        bool: True if the point is inside, False otherwise.
+    """
+    
+    t,Q = ray_intersects_triangle(gridpoint,V, A, B, C)
     if t >= 0 and t != np.inf: #line 1 added to correct parallel side
         return is_point_in_triangle(A,B,C,Q) #line 2 added to correct parallel side    
     #if  t >= 0 and not t == np.inf: line 1 removed to correct parallel side
@@ -175,6 +225,16 @@ def inside_outside(gridpoint, V, A, B, C):
     return False
 
 def load_dx(dx_file_path):
+    """
+    Load a volumetric grid from a DX file.
+
+    Parameters:
+        dx_file_path (str): Path to the DX file.
+
+    Returns:
+        tuple: (midpoints, grid) where midpoints is a numpy array of grid point coordinates,
+               and grid is the Grid object.
+    """
     #Read in dx file
     grid = Grid(dx_file_path)
 
@@ -264,13 +324,23 @@ def filter_all_grid_slices_near_facets(grid, facets):
     return filtered_points
 
 def check_filtered_points(filtered_points, facets):
-        """check each filtered points to see if it is inside or outside of mesh."""
-        checked_points = []
+    """
+    Check each filtered point to determine if it is inside or outside the mesh.
 
-        for point in filtered_points:
-            inside, t_vals = is_point_inside_mesh(point, facets)
-        checked_points.append((point, inside, t_vals))
-        return checked_points
+    Parameters:
+        filtered_points (list): List of grid points near facets.
+        facets (list): List of triangle facets defining the mesh.
+
+    Returns:
+        list: List of tuples (point, inside, t_vals) where inside is bool and t_vals are intersection parameters.
+    """
+
+    checked_points = []
+
+    for point in filtered_points:
+        inside, t_vals = is_point_inside_mesh(point, facets)
+    checked_points.append((point, inside, t_vals))
+    return checked_points
 
 
 
@@ -278,6 +348,17 @@ def check_filtered_points(filtered_points, facets):
 # Function to check if a point is inside the mesh using ray casting
 @numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
 def is_point_inside_mesh(gridpoint, facets):
+    """
+    Determine if a point is inside a mesh using ray casting algorithm.
+
+    Parameters:
+        gridpoint (np.ndarray): The point to check [x, y, z].
+        facets (list): List of triangle facets, each as [A, B, C] where A, B, C are vertices.
+
+    Returns:
+        tuple: (inside, t_vals) where inside is bool indicating if point is inside,
+               and t_vals is array of intersection parameters.
+    """
     
     ray_direction = np.array([0.0, 0.0, 1.0])  # Arbitrary ray direction
     intersections = 0
@@ -325,6 +406,19 @@ def is_point_inside_mesh(gridpoint, facets):
 #Function to label points inside or outside the mesh
 @numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=True)
 def label_points_in_mesh(points, facets, pbar=None):
+    """
+    Label all grid points as inside (0) or outside (1) the mesh using ray casting.
+
+    Parameters:
+        points (np.ndarray): 4D array of grid points (Nx, Ny, Nz, 3).
+        facets (list): List of triangle facets defining the mesh.
+        pbar (numba_progress.ProgressBar, optional): Progress bar for tracking.
+
+    Returns:
+        np.ndarray: 3D array of labels (0 for inside, 1 for outside).
+    """
+   
+  
     labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
     test_indices = [(127,225),(132,203),(283,104),(284,104)]
 
