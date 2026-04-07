@@ -129,23 +129,23 @@ def ray_intersects_triangle(p, V, A, B, C):
         tuple: (t, Q) where t is the intersection parameter (np.inf if no intersection), 
                and Q is the intersection point [x, y, z].
     """
-    # Convert all to d type float 32
-    p = p.astype(np.float32)
-    V = V.astype(np.float32)
-    A = A.astype(np.float32)
-    B = B.astype(np.float32)
-    C = C.astype(np.float32)
+    # Convert all to float64 to reduce numerical error.
+    p = p.astype(np.float64)
+    V = V.astype(np.float64)
+    A = A.astype(np.float64)
+    B = B.astype(np.float64)
+    C = C.astype(np.float64)
     # Compute the plane's normal vector
-    AB = (B - A).astype(np.float32)
-    AC = (C - A).astype(np.float32)
-    n = np.cross(AB, AC).astype(np.float32) # n is normal vector to the plane
+    AB = (B - A).astype(np.float64)
+    AC = (C - A).astype(np.float64)
+    n = np.cross(AB, AC).astype(np.float64) # n is normal vector to the plane
 #    n = n / np.linalg.norm(n) This version was not working with numba
-    norm_n = np.float32(np.sqrt(np.dot(n, n)))  # Manually compute the norm
+    norm_n = np.float64(np.sqrt(np.dot(n, n)))  # Manually compute the norm
     n = n / norm_n
-    d = np.float32(np.dot(n, A))
-    denom = np.float32(np.dot(n, V))
+    d = np.float64(np.dot(n, A))
+    denom = np.float64(np.dot(n, V))
     if (denom == 0):
-       return np.inf, np.array([0,0,0], dtype=np.float32)
+       return np.inf, np.array([0,0,0], dtype=np.float64)
      #Compute the scalar t for the intersection point
      #print(" value of p is", p)
      #print(" value of d is", d)
@@ -172,6 +172,11 @@ def is_point_in_triangle(A, B, C, Q):
         bool: True if Q is inside the triangle, False otherwise.
     """
     
+    A = A.astype(np.float64)
+    B = B.astype(np.float64)
+    C = C.astype(np.float64)
+    Q = Q.astype(np.float64)
+
     AB = B -A
     AC = C - A
     n = np.cross(AB, AC)
@@ -362,7 +367,7 @@ def is_point_inside_mesh(gridpoint, facets):
     
     ray_direction = np.array([0.0, 0.0, 1.0])  # Arbitrary ray direction
     intersections = 0
-    t_vals = np.zeros(len(facets),dtype=np.float32)
+    t_vals = np.zeros(len(facets),dtype=np.float64)
     
 #    Q_vals = np.zeros(len(facets),dtype=np.float32)
     for facet in facets:
@@ -388,25 +393,64 @@ def is_point_inside_mesh(gridpoint, facets):
     t_vals = t_vals[0:intersections]
     #print("t_vals", t_vals)
 
-    # remove duplicate intersections caused by shared edges/vertices
-    if intersections > 1:
+    # # remove duplicate intersections caused by shared edges/vertices
+    # if intersections > 1:
 
-        t_vals = np.sort(t_vals)
+    #     t_vals = np.sort(t_vals)
 
-    unique = [t_vals[0]]
+    # unique = [t_vals[0]]
 
-    for t in t_vals[1:]:
-        if abs(t - unique[-1]) > 1e-6:
-            unique.append(t)
+    # for t in t_vals[1:]:
+    #     if abs(t - unique[-1]) > 1e-6:
+    #         unique.append(t)
 
-    t_vals = np.array(unique)
-    intersections = len(t_vals)
+    # t_vals = np.array(unique, dtype=np.float64)
+    # intersections = len(t_vals)
     
     return intersections % 2 == 1, t_vals
 
 #Function to label points inside or outside the mesh
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=False)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=True)
 def label_points_in_mesh(points, facets, pbar=None):
+    labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
+
+#    print("points.shape", points.shape)
+    for ix in numba.prange(points.shape[0]):#(int(points.shape[0]/2),int(points.shape[0]/2 +1)):
+#        print("ix", ix)
+        for iy in range(points.shape[1]):#(int(points.shape[1]/2),int(points.shape[1]/2 +1)):
+            point = points[ix, iy]
+#            print("len(facets)", len(facets))
+            inside, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
+#            print("inside and t_vals", inside, t_vals)
+            #break
+            if t_vals.size == 0:
+                labels[ix, iy] = 1  # Outside
+                continue 
+           
+#            print("======")
+#            print (points[ix, iy, 0], t_vals)
+#if t_vals is an empty array, then that ray has zero intersections,stay outside
+
+            for iz in range(1,points.shape[2]):
+            
+                i_t_vals = t_vals - (points[ix,iy, iz,2] - points[ix, iy,0,2])
+                n_pos = np.sum(i_t_vals > 0)
+                n_neg = np.sum(i_t_vals < 0)   
+                if n_pos % 2 == 0 and n_neg % 2 == 0 and (n_pos + n_neg) > 0:
+                    labels[ix, iy, iz] = 1
+                         
+                else:
+                        
+                    labels[ix,iy,iz] = 0   
+        # uncomment this line to check for a single point    
+        # break
+        if pbar is not None:
+            pbar.update(1)
+    return labels
+
+#Function to label points inside or outside the mesh
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=False)
+def label_points_in_mesh_debug(points, facets, pbar=None):
     """
     Label all grid points as inside (0) or outside (1) the mesh using ray casting.
 
