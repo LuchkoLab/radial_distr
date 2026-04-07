@@ -7,9 +7,14 @@ import mrcfile
 import numba
 import argparse
 import time
-import numba_progress 
+try:
+    import numba_progress
+except ImportError:
+    numba_progress = None
 import numpy
 '''This module takes in .stl and .mrc or .dx data, and it determines whether points lie inside or outside of a surface created by a .stl file then outputs the data to a .dx file'''
+
+INTERSECTION_T_EPSILON = 1e-5
 
 def main(stl_file_path, dx_file_path, output_file_path):
 
@@ -37,8 +42,11 @@ def main(stl_file_path, dx_file_path, output_file_path):
     gridpoints = gridpoints.reshape(list(grid.grid.shape)+[3])
     print("Labeling Points", flush=True)
     starttime = time.perf_counter()
-    with numba_progress.ProgressBar(total=gridpoints.shape[0]) as pbar:
-        labels = label_points_in_mesh(gridpoints, model_mesh.vectors, pbar)
+    if numba_progress is None:
+        labels = label_points_in_mesh(gridpoints, model_mesh.vectors)
+    else:
+        with numba_progress.ProgressBar(total=gridpoints.shape[0]) as pbar:
+            labels = label_points_in_mesh(gridpoints, model_mesh.vectors, pbar)
     endtime = time.perf_counter()
     labels = labels.reshape(grid.grid.shape)
     print(f"How much time it took {endtime - starttime}", flush=True)
@@ -114,7 +122,65 @@ def load_stl(stl_file_path):
 
 
 
-# p is origin of the ray, V is the direction unit vector originating from point p, t scales V to reach the point on the plane Q, and A,B,C are the points of the triangle
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
+def watertight_ray_intersects_triangle(p, V, A, B, C):
+    """
+    Robust ray/triangle intersection specialized for rays cast in the +z direction.
+    based on
+
+    S. Woop, C. Benthin, and I. Wald, Watertight ray/triangle intersection, Journal of Computer Graphics Techniques (JCGT) 2, 65 (2013).
+
+    Returns:
+        tuple: (hit, t, Q, b0, b1, b2)
+    """
+    p = p.astype(np.float64)
+    V = V.astype(np.float64)
+    A = A.astype(np.float64)
+    B = B.astype(np.float64)
+    C = C.astype(np.float64)
+
+    if np.abs(V[0]) > 1e-12 or np.abs(V[1]) > 1e-12 or np.abs(V[2]) <= 1e-12:
+        return False, np.inf, np.array([0.0, 0.0, 0.0], dtype=np.float64), 0.0, 0.0, 0.0
+
+    p0x = A[0] - p[0]
+    p0y = A[1] - p[1]
+    p1x = B[0] - p[0]
+    p1y = B[1] - p[1]
+    p2x = C[0] - p[0]
+    p2y = C[1] - p[1]
+
+    e0 = p1x * p2y - p1y * p2x
+    e1 = p2x * p0y - p2y * p0x
+    e2 = p0x * p1y - p0y * p1x
+
+    has_neg = (e0 < 0.0) or (e1 < 0.0) or (e2 < 0.0)
+    has_pos = (e0 > 0.0) or (e1 > 0.0) or (e2 > 0.0)
+    if has_neg and has_pos:
+        return False, np.inf, np.array([0.0, 0.0, 0.0], dtype=np.float64), 0.0, 0.0, 0.0
+
+    det = e0 + e1 + e2
+    if det == 0.0:
+        return False, np.inf, np.array([0.0, 0.0, 0.0], dtype=np.float64), 0.0, 0.0, 0.0
+
+    t_scaled = e0 * (A[2] - p[2]) + e1 * (B[2] - p[2]) + e2 * (C[2] - p[2])
+
+    if det > 0.0:
+        if t_scaled < 0.0:
+            return False, np.inf, np.array([0.0, 0.0, 0.0], dtype=np.float64), 0.0, 0.0, 0.0
+    else:
+        if t_scaled > 0.0:
+            return False, np.inf, np.array([0.0, 0.0, 0.0], dtype=np.float64), 0.0, 0.0, 0.0
+
+    inv_det = 1.0 / det
+    t = t_scaled * inv_det
+    b0 = e0 * inv_det
+    b1 = e1 * inv_det
+    b2 = e2 * inv_det
+    Q = p + t * V
+
+    return True, t, Q, b0, b1, b2
+
+
 @numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
 def ray_intersects_triangle(p, V, A, B, C):
     """
@@ -129,36 +195,12 @@ def ray_intersects_triangle(p, V, A, B, C):
         tuple: (t, Q) where t is the intersection parameter (np.inf if no intersection), 
                and Q is the intersection point [x, y, z].
     """
-    # Convert all to d type float 32
-    p = p.astype(np.float32)
-    V = V.astype(np.float32)
-    A = A.astype(np.float32)
-    B = B.astype(np.float32)
-    C = C.astype(np.float32)
-    # Compute the plane's normal vector
-    AB = (B - A).astype(np.float32)
-    AC = (C - A).astype(np.float32)
-    n = np.cross(AB, AC).astype(np.float32) # n is normal vector to the plane
-#    n = n / np.linalg.norm(n) This version was not working with numba
-    norm_n = np.float32(np.sqrt(np.dot(n, n)))  # Manually compute the norm
-    n = n / norm_n
-    d = np.float32(np.dot(n, A))
-    denom = np.float32(np.dot(n, V))
-    if (denom == 0):
-       return np.inf, np.array([0,0,0], dtype=np.float32)
-     #Compute the scalar t for the intersection point
-     #print(" value of p is", p)
-     #print(" value of d is", d)
-     #print(" value of n is", n)
-     #print(" value of A dotted with p is", np.dot(A, p))
-     #print(" value of n dotted with V is", np.dot(n, V))
-    
-    t = (d - np.dot(n,p)) / denom
-    #print(" value of t is", t)
-    #Compute the intersection point Q
-    Q = p + t * V
-
+    hit, t, Q, _, _, _ = watertight_ray_intersects_triangle(p, V, A, B, C)
+    if not hit:
+        return np.inf, np.array([0.0, 0.0, 0.0], dtype=np.float64)
     return t, Q
+
+
 @numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
 def is_point_in_triangle(A, B, C, Q):
     """
@@ -172,29 +214,25 @@ def is_point_in_triangle(A, B, C, Q):
         bool: True if Q is inside the triangle, False otherwise.
     """
     
-    AB = B -A
+    AB = B - A
     AC = C - A
-    n = np.cross(AB, AC)
-    # Test edge AB
-    AB = B -A
-    cross1 = np.cross(AB, Q - A)
-    dot1 = np.dot(n, cross1)
+    AQ = Q - A
 
-    # Test edge BC
-    BC = C - B
-    cross2 = np.cross(BC, Q - B)
-    dot2 = np.dot(n, cross2)
+    dot_ab_ab = np.dot(AB, AB)
+    dot_ab_ac = np.dot(AB, AC)
+    dot_ac_ac = np.dot(AC, AC)
+    dot_aq_ab = np.dot(AQ, AB)
+    dot_aq_ac = np.dot(AQ, AC)
 
-    # Test edge CA
-    CA = A - C
-    cross3 = np.cross(CA, Q - C)
-    dot3 = np.dot(n, cross3)
+    denom = dot_ab_ab * dot_ac_ac - dot_ab_ac * dot_ab_ac
+    if np.abs(denom) <= 1e-12:
+        return False
 
-    # Check if qqall the dot products have the same sign (either all positive or all negative)
-    #if (dot1 >= 0 and dot2 >= 0 and dot3 >= 0): Commented out to test if next line helps by including slightly negative values due to numerical precision issues
-    if (dot1 >= 1e-6 and dot2 >= 1e-6 and dot3 >= 1e-6):   return True  # Q is inside the triangle
-    else:
-        return False  # Q is outside the triangle
+    v = (dot_ac_ac * dot_aq_ab - dot_ab_ac * dot_aq_ac) / denom
+    w = (dot_ab_ab * dot_aq_ac - dot_ab_ac * dot_aq_ab) / denom
+    u = 1.0 - v - w
+
+    return u >= -INTERSECTION_T_EPSILON and v >= -INTERSECTION_T_EPSILON and w >= -INTERSECTION_T_EPSILON
 
 @numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
 def inside_outside(gridpoint, V, A, B, C):
@@ -210,19 +248,8 @@ def inside_outside(gridpoint, V, A, B, C):
         bool: True if the point is inside, False otherwise.
     """
     
-    t,Q = ray_intersects_triangle(gridpoint,V, A, B, C)
-    if t >= 0 and t != np.inf: #line 1 added to correct parallel side
-        return is_point_in_triangle(A,B,C,Q) #line 2 added to correct parallel side    
-    #if  t >= 0 and not t == np.inf: line 1 removed to correct parallel side
-        #return True and is_point_in_triangle(A,B,C,Q) line 2 removed to correct parallel side
-    #else: line 3 removed to correct parallel side
-    
-    # "Line" 3 block of if statements for coplanar rays
-    if ray_intersects_triangle(p,V,A,B,C):
-        if ray_intersects_triangle(p,V,A,B): return True
-        if ray_intersects_triangle(p,V,B,C): return True
-        if ray_intersects_triangle(p,V,C,A): return True
-    return False
+    hit, t, _, _, _, _ = watertight_ray_intersects_triangle(gridpoint, V, A, B, C)
+    return hit and t >= -INTERSECTION_T_EPSILON
 
 def load_dx(dx_file_path):
     """
@@ -362,7 +389,7 @@ def is_point_inside_mesh(gridpoint, facets):
     
     ray_direction = np.array([0.0, 0.0, 1.0])  # Arbitrary ray direction
     intersections = 0
-    t_vals = np.zeros(len(facets),dtype=np.float32)
+    t_vals = np.zeros(len(facets),dtype=np.float64)
     
 #    Q_vals = np.zeros(len(facets),dtype=np.float32)
     for facet in facets:
@@ -370,16 +397,16 @@ def is_point_inside_mesh(gridpoint, facets):
             continue  # Skip this facet if the gridpoint is not near it
         A, B, C = facet
         
-        t, Q = ray_intersects_triangle(gridpoint, ray_direction, A, B, C)
+        hit, t, Q, _, _, _ = watertight_ray_intersects_triangle(gridpoint, ray_direction, A, B, C)
         print("gridpoint:", gridpoint)
         print("t value is", t)
-        print("is_point_in_triangle values", is_point_in_triangle(A, B, C, Q))
+        print("is_point_in_triangle values", hit)
         print("Facet vertices")
         print("  A:", A)
         print("  B:", B)
         print("  C:", C)
         print("Q is :", Q)
-        if t >= 0 and is_point_in_triangle(A, B, C, Q):
+        if hit and t >= -INTERSECTION_T_EPSILON:
             t_vals[intersections] = t
             
            
@@ -389,14 +416,16 @@ def is_point_inside_mesh(gridpoint, facets):
     #print("t_vals", t_vals)
 
     # remove duplicate intersections caused by shared edges/vertices
-    if intersections > 1:
+    if intersections == 0:
+        return False, t_vals[0:0]
 
+    if intersections > 1:
         t_vals = np.sort(t_vals)
 
     unique = [t_vals[0]]
 
     for t in t_vals[1:]:
-        if abs(t - unique[-1]) > 1e-6:
+        if abs(t - unique[-1]) > INTERSECTION_T_EPSILON:
             unique.append(t)
 
     t_vals = np.array(unique)
@@ -405,7 +434,7 @@ def is_point_inside_mesh(gridpoint, facets):
     return intersections % 2 == 1, t_vals
 
 #Function to label points inside or outside the mesh
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=False)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
 def label_points_in_mesh(points, facets, pbar=None):
     """
     Label all grid points as inside (0) or outside (1) the mesh using ray casting.
@@ -418,67 +447,45 @@ def label_points_in_mesh(points, facets, pbar=None):
     Returns:
         np.ndarray: 3D array of labels (0 for inside, 1 for outside).
     """
-   
-  
-    labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))  # Initialize all points as outside (1)
-    test_indices = [(127,225),(132,203),(283,104),(284,104)]
+    labels = np.ones((points.shape[0], points.shape[1], points.shape[2]))
+    test_indices = [(127, 225), (132, 203), (283, 104), (284, 104)]
 
     for ix, iy in test_indices:
-
-        point = points[ix, iy]
+        if ix >= points.shape[0] or iy >= points.shape[1]:
+            continue
 
         inside, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
 
         print("Testing:", ix, iy)
-        print("Point:", points[ix,iy,0])
+        print("Point:", points[ix, iy, 0])
         print("inside:", inside)
         print("t_vals:", t_vals)
         print("Number of t_vals:", len(t_vals))
         print("Number of facets:", len(facets))
-        print("Number of intersections:", len(t_vals)
-                                       )
-    #print("points.shape", points.shape)
-    #Unccommented to test indices (1)
-    # for ix in numba.prange(points.shape[0]):
-    #uncomment next line to test for a single point in the middle of the grid
-    #for ix in range(int(points.shape[0]/2),int(points.shape[0]/2 +1)):
-        #print("ix", ix)
-        #Uncommented to test indices (2)
-        # for iy in range(points.shape[1]):
-            #uncomment next line to test for a single point in the middle of the grid
-        #for iy in range(int(points.shape[1]/2),int(points.shape[1]/2 +1)):
-            #Uncommented to test indices (3)
-            # point = points[ix, iy]
-            #print("len(facets)", len(facets))
-            #Uncommented to tests indices (4)
-            # inside, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
-            #print("inside and t_vals", inside, t_vals)
-            #break
-            #Uncommented to tests indices (5)
-            # if t_vals.size == 0:
-                #Uncommentted to test indices (6)
-                # labels[ix, iy] = 1  # Outside
-        continue 
-           
-            #print("======")
-            #print (points[ix, iy, 0], t_vals)
-#if t_vals is an empty array, then that ray has zero intersections,stay outside
+        print("Number of intersections:", len(t_vals))
 
-    for iz in range(1,points.shape[2]):
-            
-                i_t_vals = t_vals - (points[ix,iy, iz,2] - points[ix, iy,0,2])
-                n_pos = np.sum(i_t_vals > 0)
-                n_neg = np.sum(i_t_vals < 0)   
+    for ix in range(points.shape[0]):
+        for iy in range(points.shape[1]):
+            _, t_vals = is_point_inside_mesh(points[ix, iy, 0], facets)
+
+            if t_vals.size == 0:
+                continue
+
+            base_z = points[ix, iy, 0, 2]
+            for iz in range(points.shape[2]):
+                dz = points[ix, iy, iz, 2] - base_z
+                shifted_t_vals = t_vals - dz
+                n_pos = np.sum(shifted_t_vals > 0)
+                n_neg = np.sum(shifted_t_vals < 0)
+
                 if n_pos % 2 == 0 and n_neg % 2 == 0 and (n_pos + n_neg) > 0:
                     labels[ix, iy, iz] = 1
-                         
                 else:
-                        
-                    labels[ix,iy,iz] = 0   
-            # uncomment this line to check for a single point    
-            #break
-        #if pbar is not None:
-            #pbar.update(1)
+                    labels[ix, iy, iz] = 0
+
+        if pbar is not None:
+            pbar.update(1)
+
     return labels
 
 # Run the script with example files
