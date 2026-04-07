@@ -115,7 +115,7 @@ def load_stl(stl_file_path):
 
 
 # p is origin of the ray, V is the direction unit vector originating from point p, t scales V to reach the point on the plane Q, and A,B,C are the points of the triangle
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
 def ray_intersects_triangle(p, V, A, B, C):
     """
     Check if a ray intersects a triangle and return the intersection parameter and point.
@@ -159,7 +159,7 @@ def ray_intersects_triangle(p, V, A, B, C):
     Q = p + t * V
 
     return t, Q
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
 def is_point_in_triangle(A, B, C, Q):
     """
     Check if a point Q lies inside the triangle defined by points A, B, C using barycentric coordinates.
@@ -196,7 +196,7 @@ def is_point_in_triangle(A, B, C, Q):
     else:
         return False  # Q is outside the triangle
 
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
 def inside_outside(gridpoint, V, A, B, C):
     """
     Determine if a point is inside or outside a triangle based on ray intersection.
@@ -267,7 +267,7 @@ def load_dx(dx_file_path):
     
 
     return np.array(midpoints), grid
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
 def is_point_near_facet(gridpoint, facet):
     """
     Check if a grid point (x, y, z) is near a facet in 3D space.
@@ -346,7 +346,7 @@ def check_filtered_points(filtered_points, facets):
 
         
 # Function to check if a point is inside the mesh using ray casting
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=False,fastmath=False)
 def is_point_inside_mesh(gridpoint, facets):
     """
     Determine if a point is inside a mesh using ray casting algorithm.
@@ -371,15 +371,14 @@ def is_point_inside_mesh(gridpoint, facets):
         A, B, C = facet
         
         t, Q = ray_intersects_triangle(gridpoint, ray_direction, A, B, C)
-        #print("gridpoint:", gridpoint)
-        #print("t value is", t)
-        #print("is_point_in_triangle values", is_point_in_triangle(A, B, C, Q))
-        #print("Facet vertices")
-     
-        #print("  A:", A)
-        #print("  B:", B)
-        #print("  C:", C)
-        #print("Q is :", Q)
+        print("gridpoint:", gridpoint)
+        print("t value is", t)
+        print("is_point_in_triangle values", is_point_in_triangle(A, B, C, Q))
+        print("Facet vertices")
+        print("  A:", A)
+        print("  B:", B)
+        print("  C:", C)
+        print("Q is :", Q)
         if t >= 0 and is_point_in_triangle(A, B, C, Q):
             t_vals[intersections] = t
             
@@ -406,7 +405,7 @@ def is_point_inside_mesh(gridpoint, facets):
     return intersections % 2 == 1, t_vals
 
 #Function to label points inside or outside the mesh
-@numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=True)
+@numba.jit(cache=False,nopython=True, nogil=True,parallel=True,fastmath=False)
 def label_points_in_mesh(points, facets, pbar=None):
     """
     Label all grid points as inside (0) or outside (1) the mesh using ray casting.
