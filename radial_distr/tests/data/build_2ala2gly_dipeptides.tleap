@@ -1,0 +1,24 @@
+source leaprc.protein.ff19SB
+
+# Build alanine dipeptides
+ala1 = sequence { ACE ALA NME }
+ala2 = sequence { ACE ALA NME }
+
+# Build glycine dipeptides
+gly1 = sequence { ACE GLY NME }
+gly2 = sequence { ACE GLY NME }
+
+# Translate molecules so they do not overlap
+translate ala1 {  0.0  0.0  0.0 }
+translate ala2 { 15.0  0.0  0.0 }
+translate gly1 {  0.0 15.0  0.0 }
+translate gly2 { 15.0 15.0  0.0 }
+
+# Combine into one system
+system = combine { ala1 ala2 gly1 gly2 }
+
+# Save files
+savepdb system 2ala_2gly_dipeptides.pdb
+saveamberparm system 2ala_2gly_dipeptides.prmtop 2ala_2gly_dipeptides.rst7
+
+quit
