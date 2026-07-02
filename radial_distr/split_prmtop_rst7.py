@@ -20,6 +20,12 @@ except Exception:
 
 
 def find_components(struct: pmd.Structure):
+    """Return atom-index groups for each bonded component in a structure.
+
+    ParmEd stores bonds as atom-object pairs, so this builds an adjacency list
+    over zero-based atom indices and walks it with depth-first search. Atoms
+    with no bonds are returned as single-atom components.
+    """
     natoms = len(struct.atoms)
     atom_index = {atom: i for i, atom in enumerate(struct.atoms)}
     adj = [[] for _ in range(natoms)]
@@ -47,18 +53,33 @@ def find_components(struct: pmd.Structure):
     return comps
 
 
-def save_component(struct: pmd.Structure, indices: list[int], out_prmtop: str, out_rst7: str):
+def save_component(struct: pmd.Structure, indices: list[int], out_prmtop: str, out_rst7: str, out_pdb: str):
+    """Save a selected component as AMBER topology, restart, and PDB files.
+
+    Args:
+        struct: ParmEd structure containing the full system and coordinates.
+        indices: Zero-based atom indices to extract as one component.
+        out_prmtop: Destination path for the component topology.
+        out_rst7: Destination path for the component coordinates.
+        out_pdb: Destination path for a PDB copy of the component.
+
+    Raises:
+        RuntimeError: If the installed ParmEd version cannot slice a structure
+            with an integer index list.
+    """
     try:
         sub = struct[indices]
     except Exception as e:
         raise RuntimeError(
             "ParmEd selection by integer-index list failed; upgrade ParmEd or report the error"
         ) from e
-    sub.save(out_prmtop)
-    sub.save(out_rst7)
+    sub.save(out_prmtop, overwrite=True)
+    sub.save(out_rst7, overwrite=True)
+    sub.save(out_pdb, overwrite=True)
 
 
 def build_parser():
+    """Build the command-line parser for splitting AMBER structure files."""
     p = argparse.ArgumentParser(description="Split AMBER prmtop + rst7 by bonded molecules.")
     p.add_argument("--prmtop", "-p", required=True, help="Input prmtop/parm7 file")
     p.add_argument("--rst7", "-r", required=True, help="Input rst7 file (coordinates)")
@@ -70,6 +91,12 @@ def build_parser():
 
 
 def main(argv=None):
+    """Run the split workflow from command-line-style arguments.
+
+    Args:
+        argv: Optional argument list. When omitted, argparse reads arguments
+            from ``sys.argv``.
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -85,10 +112,11 @@ def main(argv=None):
         name = f"{args.prefix}_{idx:0{args.pad}d}"
         out_prmtop = os.path.join(args.outdir, f"{name}.prmtop")
         out_rst7 = os.path.join(args.outdir, f"{name}.rst7")
-        save_component(struct, comp, out_prmtop, out_rst7)
+        out_pdb = os.path.join(args.outdir, f"{name}.pdb")
+        save_component(struct, comp, out_prmtop, out_rst7, out_pdb)
         written += 1
-        print(f"Wrote {out_prmtop} ({len(comp)} atoms) and {out_rst7}")
-        summary.append({"index": idx, "name": name, "n_atoms": len(comp), "prmtop": out_prmtop, "rst7": out_rst7})
+        print(f"Wrote {out_prmtop} ({len(comp)} atoms) and {out_rst7} and {out_pdb}")
+        summary.append({"index": idx, "name": name, "n_atoms": len(comp), "prmtop": out_prmtop, "rst7": out_rst7, "pdb": out_pdb })
 
     # write summary
     summary_path = os.path.join(args.outdir, f"{args.prefix}_split_summary.json")
